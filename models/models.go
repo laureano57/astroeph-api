@@ -24,14 +24,10 @@ type NatalChartRequest struct {
 }
 
 type PlanetPosition struct {
-	Name           string  `json:"name"`
-	Longitude      float64 `json:"longitude"`
-	Latitude       float64 `json:"latitude"`
-	Distance       float64 `json:"distance"`
-	LongitudeSpeed float64 `json:"longitude_speed"`
-	Sign           string  `json:"sign"`
-	Degree         float64 `json:"degree"`
-	House          int     `json:"house"`
+	Name   string  `json:"name"`
+	Sign   string  `json:"sign"`
+	Degree float64 `json:"degree"`
+	House  int     `json:"house"`
 }
 
 type HouseCusp struct {
@@ -40,11 +36,15 @@ type HouseCusp struct {
 	Sign  string  `json:"sign"`
 }
 
+type ChartAngle struct {
+	Sign   string  `json:"sign"`
+	Degree float64 `json:"degree"`
+}
+
 type Aspect struct {
 	Planet1    string  `json:"planet1"`
 	Planet2    string  `json:"planet2"`
 	Type       string  `json:"type"` // e.g., "conjunction", "opposition", etc.
-	Angle      float64 `json:"angle"`
 	Orb        float64 `json:"orb"`
 	IsApplying bool    `json:"is_applying"`
 }
@@ -53,8 +53,8 @@ type ChartData struct {
 	Planets     []PlanetPosition `json:"planets"`
 	Houses      []HouseCusp      `json:"houses"`
 	Aspects     []Aspect         `json:"aspects"`
-	Ascendant   float64          `json:"ascendant"`
-	Midheaven   float64          `json:"midheaven"`
+	Ascendant   ChartAngle       `json:"ascendant"`
+	Midheaven   ChartAngle       `json:"midheaven"`
 	HouseSystem string           `json:"house_system"`
 }
 
@@ -224,13 +224,11 @@ func FormatNatalChartForLLM(chartData *NatalChartResponse) string {
 	}
 
 	// Chart Angles
-	result.WriteString(fmt.Sprintf("\nCHART ANGLES:\n"))
-	ascendantDegreeInSign := GetDegreeInSign(chartData.Ascendant)
-	midheavenDegreeInSign := GetDegreeInSign(chartData.Midheaven)
-	ascendantDegMin := formatDegreesMinutes(ascendantDegreeInSign)
-	midheavenDegMin := formatDegreesMinutes(midheavenDegreeInSign)
-	result.WriteString(fmt.Sprintf("• Ascendant: %s %s\n", ascendantDegMin, GetZodiacSign(chartData.Ascendant)))
-	result.WriteString(fmt.Sprintf("• Midheaven: %s %s\n", midheavenDegMin, GetZodiacSign(chartData.Midheaven)))
+	result.WriteString("\nCHART ANGLES:\n")
+	ascendantDegMin := formatDegreesMinutes(chartData.Ascendant.Degree)
+	midheavenDegMin := formatDegreesMinutes(chartData.Midheaven.Degree)
+	result.WriteString(fmt.Sprintf("• Ascendant: %s %s\n", ascendantDegMin, chartData.Ascendant.Sign))
+	result.WriteString(fmt.Sprintf("• Midheaven: %s %s\n", midheavenDegMin, chartData.Midheaven.Sign))
 
 	// House Cusps
 	result.WriteString(fmt.Sprintf("\nHOUSE CUSPS:\n"))

@@ -124,7 +124,7 @@ func (s *AstrologyService) CalculateNatalChart(req *models.NatalChartRequest) (*
 		float64(utcTime.Hour())+float64(utcTime.Minute())/60.0+float64(utcTime.Second())/3600.0, 1)
 
 	// Calculate planet positions using Swiss Ephemeris
-	planets, err := s.calculatePlanetPositions(julianDay)
+	planets, planetCalcData, err := s.calculatePlanetPositions(julianDay)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate planet positions: %w", err)
 	}
@@ -138,20 +138,26 @@ func (s *AstrologyService) CalculateNatalChart(req *models.NatalChartRequest) (*
 
 	// Assign houses to planets
 	for i := range planets {
-		planets[i].House = s.getHouseForPlanet(planets[i].Longitude, houses)
+		planets[i].House = s.getHouseForPlanet(planetCalcData[i].longitude, houses)
 	}
 
 	// Calculate aspects
-	aspects := s.calculateAspects(planets)
+	aspects := s.calculateAspects(planetCalcData)
 
 	// Build response
 	response := &models.NatalChartResponse{
 		ChartData: models.ChartData{
-			Planets:     planets,
-			Houses:      houses,
-			Aspects:     aspects,
-			Ascendant:   ascendant,
-			Midheaven:   midheaven,
+			Planets: planets,
+			Houses:  houses,
+			Aspects: aspects,
+			Ascendant: models.ChartAngle{
+				Sign:   models.GetZodiacSign(ascendant),
+				Degree: models.GetDegreeInSign(ascendant),
+			},
+			Midheaven: models.ChartAngle{
+				Sign:   models.GetZodiacSign(midheaven),
+				Degree: models.GetDegreeInSign(midheaven),
+			},
 			HouseSystem: req.HouseSystem,
 		},
 		BirthInfo: models.BirthInfo{
@@ -168,9 +174,17 @@ func (s *AstrologyService) CalculateNatalChart(req *models.NatalChartRequest) (*
 	return response, nil
 }
 
+// Internal structure to hold planet calculation data
+type planetCalcData struct {
+	planet         models.PlanetPosition
+	longitude      float64
+	longitudeSpeed float64
+}
+
 // calculatePlanetPositions calculates positions for all main planets using Swiss Ephemeris
-func (s *AstrologyService) calculatePlanetPositions(julianDay float64) ([]models.PlanetPosition, error) {
+func (s *AstrologyService) calculatePlanetPositions(julianDay float64) ([]models.PlanetPosition, []planetCalcData, error) {
 	var planets []models.PlanetPosition
+	var calcData []planetCalcData
 
 	for _, planetId := range mainPlanets {
 		// Calculate planet position using swephgo
@@ -179,28 +193,29 @@ func (s *AstrologyService) calculatePlanetPositions(julianDay float64) ([]models
 		result := swephgo.Calc(julianDay, planetId, 0, xx, serr)
 		if result < 0 {
 			// Only treat negative values as errors, positive values are warnings
-			return nil, fmt.Errorf("failed to calculate position for planet %d: %s", planetId, string(serr))
+			return nil, nil, fmt.Errorf("failed to calculate position for planet %d: %s", planetId, string(serr))
 		}
 
 		longitude := xx[0]
-		latitude := xx[1]
-		distance := xx[2]
 		longitudeSpeed := xx[3]
 
 		planet := models.PlanetPosition{
-			Name:           planetNames[planetId],
-			Longitude:      longitude,
-			Latitude:       latitude,
-			Distance:       distance,
-			LongitudeSpeed: longitudeSpeed,
-			Sign:           models.GetZodiacSign(longitude),
-			Degree:         models.GetDegreeInSign(longitude),
+			Name:   planetNames[planetId],
+			Sign:   models.GetZodiacSign(longitude),
+			Degree: models.GetDegreeInSign(longitude),
+		}
+
+		planetData := planetCalcData{
+			planet:         planet,
+			longitude:      longitude,
+			longitudeSpeed: longitudeSpeed,
 		}
 
 		planets = append(planets, planet)
+		calcData = append(calcData, planetData)
 	}
 
-	return planets, nil
+	return planets, calcData, nil
 }
 
 // calculateHouses calculates house cusps using Swiss Ephemeris
@@ -258,7 +273,7 @@ func (s *AstrologyService) getHouseForPlanet(longitude float64, houses []models.
 }
 
 // calculateAspects calculates aspects between planets
-func (s *AstrologyService) calculateAspects(planets []models.PlanetPosition) []models.Aspect {
+func (s *AstrologyService) calculateAspects(planetData []planetCalcData) []models.Aspect {
 	var aspects []models.Aspect
 
 	// Define major aspects and their orbs
@@ -274,14 +289,14 @@ func (s *AstrologyService) calculateAspects(planets []models.PlanetPosition) []m
 	}
 
 	// Calculate aspects between all planet pairs
-	for i, planet1 := range planets {
-		for j, planet2 := range planets {
+	for i, data1 := range planetData {
+		for j, data2 := range planetData {
 			if i >= j {
 				continue // Avoid duplicate pairs and self-aspects
 			}
 
 			// Calculate angular difference
-			angle := math.Abs(planet1.Longitude - planet2.Longitude)
+			angle := math.Abs(data1.longitude - data2.longitude)
 			if angle > 180 {
 				angle = 360 - angle
 			}
@@ -291,12 +306,11 @@ func (s *AstrologyService) calculateAspects(planets []models.PlanetPosition) []m
 				diff := math.Abs(angle - aspectInfo.angle)
 				if diff <= aspectInfo.orb {
 					aspect := models.Aspect{
-						Planet1:    planet1.Name,
-						Planet2:    planet2.Name,
+						Planet1:    data1.planet.Name,
+						Planet2:    data2.planet.Name,
 						Type:       aspectName,
-						Angle:      angle,
 						Orb:        diff,
-						IsApplying: planet1.LongitudeSpeed > planet2.LongitudeSpeed,
+						IsApplying: data1.longitudeSpeed > data2.longitudeSpeed,
 					}
 					aspects = append(aspects, aspect)
 					break // Only one aspect per planet pair
