@@ -304,21 +304,64 @@ func (s *AstrologyService) getHouseForPlanet(longitude float64, numericCusps []f
 	return closestHouse
 }
 
-// calculateAspects calculates aspects between planets
+// AspectDefinition defines an aspect with its base angle and orb
+type AspectDefinition struct {
+	Angle   float64
+	BaseOrb float64
+}
+
+// PlanetAdjustment defines orb adjustments for each planet
+type PlanetAdjustment struct {
+	Adjustment float64
+}
+
+// Define all aspects with professional standard orbs
+var aspectDefinitions = map[string]AspectDefinition{
+	// Major aspects
+	"conjunction": {0, 8},
+	"opposition":  {180, 8},
+	"trine":       {120, 7},
+	"square":      {90, 6},
+	"sextile":     {60, 4},
+	// Minor aspects
+	"quincunx":     {150, 2},
+	"semisextile":  {30, 1},
+	"semisquare":   {45, 1},
+	"sesquisquare": {135, 1},
+}
+
+// Define orb adjustments per planet
+var planetAdjustments = map[string]PlanetAdjustment{
+	"Sun":     {1},
+	"Moon":    {1},
+	"Mercury": {0},
+	"Venus":   {0},
+	"Mars":    {0},
+	"Jupiter": {1},
+	"Saturn":  {1},
+	"Uranus":  {2},
+	"Neptune": {2},
+	"Pluto":   {2},
+}
+
+// calculateDynamicOrb calculates the effective orb between two planets for a specific aspect
+func (s *AstrologyService) calculateDynamicOrb(planet1Name, planet2Name string, aspectName string) float64 {
+	aspectDef, exists := aspectDefinitions[aspectName]
+	if !exists {
+		return 0 // Unknown aspect
+	}
+
+	// Get planet adjustments
+	adj1 := planetAdjustments[planet1Name].Adjustment
+	adj2 := planetAdjustments[planet2Name].Adjustment
+
+	// Calculate final orb: base_orb + adjustment_planet1 + adjustment_planet2
+	return aspectDef.BaseOrb + adj1 + adj2
+}
+
+// calculateAspects calculates aspects between planets using dynamic orbs
 func (s *AstrologyService) calculateAspects(planetData []planetCalcData) []models.Aspect {
 	var aspects []models.Aspect
-
-	// Define major aspects and their orbs
-	majorAspects := map[string]struct {
-		angle float64
-		orb   float64
-	}{
-		"conjunction": {0, 8},
-		"opposition":  {180, 8},
-		"trine":       {120, 6},
-		"square":      {90, 6},
-		"sextile":     {60, 4},
-	}
 
 	// Calculate aspects between all planet pairs
 	for i, data1 := range planetData {
@@ -333,10 +376,14 @@ func (s *AstrologyService) calculateAspects(planetData []planetCalcData) []model
 				angle = 360 - angle
 			}
 
-			// Check for major aspects
-			for aspectName, aspectInfo := range majorAspects {
-				diff := math.Abs(angle - aspectInfo.angle)
-				if diff <= aspectInfo.orb {
+			// Check all aspects (major and minor)
+			for aspectName, aspectDef := range aspectDefinitions {
+				diff := math.Abs(angle - aspectDef.Angle)
+
+				// Calculate dynamic orb for this planet pair and aspect
+				effectiveOrb := s.calculateDynamicOrb(data1.planet.Name, data2.planet.Name, aspectName)
+
+				if diff <= effectiveOrb {
 					aspect := models.Aspect{
 						Planet1:    data1.planet.Name,
 						Planet2:    data2.planet.Name,
