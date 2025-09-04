@@ -24,29 +24,29 @@ type NatalChartRequest struct {
 }
 
 type PlanetPosition struct {
-	Name   string  `json:"name"`
-	Sign   string  `json:"sign"`
-	Degree float64 `json:"degree"`
-	House  int     `json:"house"`
+	Name   string `json:"name"`
+	Sign   string `json:"sign"`
+	Degree string `json:"degree"`
+	House  int    `json:"house"`
 }
 
 type HouseCusp struct {
-	House int     `json:"house"`
-	Cusp  float64 `json:"cusp"`
-	Sign  string  `json:"sign"`
+	House int    `json:"house"`
+	Cusp  string `json:"cusp"`
+	Sign  string `json:"sign"`
 }
 
 type ChartAngle struct {
-	Sign   string  `json:"sign"`
-	Degree float64 `json:"degree"`
+	Sign   string `json:"sign"`
+	Degree string `json:"degree"`
 }
 
 type Aspect struct {
-	Planet1    string  `json:"planet1"`
-	Planet2    string  `json:"planet2"`
-	Type       string  `json:"type"` // e.g., "conjunction", "opposition", etc.
-	Orb        float64 `json:"orb"`
-	IsApplying bool    `json:"is_applying"`
+	Planet1    string `json:"planet1"`
+	Planet2    string `json:"planet2"`
+	Type       string `json:"type"` // e.g., "conjunction", "opposition", etc.
+	Orb        string `json:"orb"`
+	IsApplying bool   `json:"is_applying"`
 }
 
 type ChartData struct {
@@ -191,6 +191,26 @@ func formatDegreesMinutes(decimalDegrees float64) string {
 	return fmt.Sprintf("%d°%02d'", degrees, minutes)
 }
 
+// formatDegreesMinutesSeconds converts decimal degrees to degrees, minutes and seconds format
+func formatDegreesMinutesSeconds(decimalDegrees float64) string {
+	degrees := int(decimalDegrees)
+	remainingMinutes := (decimalDegrees - float64(degrees)) * 60
+	minutes := int(remainingMinutes)
+	seconds := int((remainingMinutes - float64(minutes)) * 60)
+	return fmt.Sprintf("%d°%02d'%02d\"", degrees, minutes, seconds)
+}
+
+// FormatDegreeInSign converts decimal degrees within a sign to DMS format
+func FormatDegreeInSign(longitude float64) string {
+	degreeInSign := GetDegreeInSign(longitude)
+	return formatDegreesMinutesSeconds(degreeInSign)
+}
+
+// FormatLongitude converts a full longitude to DMS format (for house cusps)
+func FormatLongitude(longitude float64) string {
+	return formatDegreesMinutesSeconds(longitude)
+}
+
 // FormatNatalChartForLLM converts natal chart data to LLM-friendly text format
 func FormatNatalChartForLLM(chartData *NatalChartResponse) string {
 	var result strings.Builder
@@ -218,41 +238,27 @@ func FormatNatalChartForLLM(chartData *NatalChartResponse) string {
 	// Planetary Positions
 	result.WriteString("PLANETARY POSITIONS:\n")
 	for _, planet := range chartData.Planets {
-		degreeInSignDegMin := formatDegreesMinutes(planet.Degree)
 		result.WriteString(fmt.Sprintf("• %s: %s %s (House %d)\n",
-			planet.Name, degreeInSignDegMin, planet.Sign, planet.House))
+			planet.Name, planet.Degree, planet.Sign, planet.House))
 	}
 
 	// Chart Angles
 	result.WriteString("\nCHART ANGLES:\n")
-	ascendantDegMin := formatDegreesMinutes(chartData.Ascendant.Degree)
-	midheavenDegMin := formatDegreesMinutes(chartData.Midheaven.Degree)
-	result.WriteString(fmt.Sprintf("• Ascendant: %s %s\n", ascendantDegMin, chartData.Ascendant.Sign))
-	result.WriteString(fmt.Sprintf("• Midheaven: %s %s\n", midheavenDegMin, chartData.Midheaven.Sign))
+	result.WriteString(fmt.Sprintf("• Ascendant: %s %s\n", chartData.Ascendant.Degree, chartData.Ascendant.Sign))
+	result.WriteString(fmt.Sprintf("• Midheaven: %s %s\n", chartData.Midheaven.Degree, chartData.Midheaven.Sign))
 
 	// House Cusps
-	result.WriteString(fmt.Sprintf("\nHOUSE CUSPS:\n"))
+	result.WriteString("\nHOUSE CUSPS:\n")
 	for _, house := range chartData.Houses {
-		// Calculate degrees within the sign for house cusp
-		degreeInSign := GetDegreeInSign(house.Cusp)
-		cuspDegMin := formatDegreesMinutes(degreeInSign)
-		result.WriteString(fmt.Sprintf("• House %d: %s %s\n", house.House, cuspDegMin, house.Sign))
+		result.WriteString(fmt.Sprintf("• House %d: %s %s\n", house.House, house.Cusp, house.Sign))
 	}
 
 	// Major Aspects
 	if len(chartData.Aspects) > 0 {
-		result.WriteString(fmt.Sprintf("\nMAJOR ASPECTS:\n"))
+		result.WriteString("\nMAJOR ASPECTS:\n")
 		for _, aspect := range chartData.Aspects {
-			orb_desc := "exact"
-			if aspect.Orb > 3 {
-				orb_desc = "wide"
-			} else if aspect.Orb > 1 {
-				orb_desc = "moderate"
-			}
-
-			orbDegMin := formatDegreesMinutes(aspect.Orb)
-			result.WriteString(fmt.Sprintf("• %s %s %s - %s orb (%s)\n",
-				aspect.Planet1, aspect.Type, aspect.Planet2, orbDegMin, orb_desc))
+			result.WriteString(fmt.Sprintf("• %s %s %s - %s orb\n",
+				aspect.Planet1, aspect.Type, aspect.Planet2, aspect.Orb))
 		}
 	}
 

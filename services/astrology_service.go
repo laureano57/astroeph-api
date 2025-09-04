@@ -131,14 +131,14 @@ func (s *AstrologyService) CalculateNatalChart(req *models.NatalChartRequest) (*
 
 	// Calculate houses using Swiss Ephemeris
 	houseSystem := s.getHouseSystemCode(req.HouseSystem)
-	houses, ascendant, midheaven, err := s.calculateHouses(julianDay, lat, lon, houseSystem)
+	houses, numericCusps, ascendant, midheaven, err := s.calculateHouses(julianDay, lat, lon, houseSystem)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate houses: %w", err)
 	}
 
 	// Assign houses to planets
 	for i := range planets {
-		planets[i].House = s.getHouseForPlanet(planetCalcData[i].longitude, houses)
+		planets[i].House = s.getHouseForPlanet(planetCalcData[i].longitude, numericCusps)
 	}
 
 	// Calculate aspects
@@ -152,11 +152,11 @@ func (s *AstrologyService) CalculateNatalChart(req *models.NatalChartRequest) (*
 			Aspects: aspects,
 			Ascendant: models.ChartAngle{
 				Sign:   models.GetZodiacSign(ascendant),
-				Degree: models.GetDegreeInSign(ascendant),
+				Degree: models.FormatDegreeInSign(ascendant),
 			},
 			Midheaven: models.ChartAngle{
 				Sign:   models.GetZodiacSign(midheaven),
-				Degree: models.GetDegreeInSign(midheaven),
+				Degree: models.FormatDegreeInSign(midheaven),
 			},
 			HouseSystem: req.HouseSystem,
 		},
@@ -202,7 +202,7 @@ func (s *AstrologyService) calculatePlanetPositions(julianDay float64) ([]models
 		planet := models.PlanetPosition{
 			Name:   planetNames[planetId],
 			Sign:   models.GetZodiacSign(longitude),
-			Degree: models.GetDegreeInSign(longitude),
+			Degree: models.FormatDegreeInSign(longitude),
 		}
 
 		planetData := planetCalcData{
@@ -219,57 +219,89 @@ func (s *AstrologyService) calculatePlanetPositions(julianDay float64) ([]models
 }
 
 // calculateHouses calculates house cusps using Swiss Ephemeris
-func (s *AstrologyService) calculateHouses(julianDay, lat, lon float64, houseSystem rune) ([]models.HouseCusp, float64, float64, error) {
+func (s *AstrologyService) calculateHouses(julianDay, lat, lon float64, houseSystem rune) ([]models.HouseCusp, []float64, float64, float64, error) {
 	// Calculate houses using swephgo
 	cusps := make([]float64, 13) // 0-12, where 1-12 are the house cusps
 	ascmc := make([]float64, 10) // Ascendant, MC, etc.
 	result := swephgo.Houses(julianDay, lat, lon, int(houseSystem), cusps, ascmc)
 	if result < 0 {
 		// Only treat negative values as errors, positive values are warnings
-		return nil, 0, 0, fmt.Errorf("failed to calculate houses: house system not supported or invalid parameters")
+		return nil, nil, 0, 0, fmt.Errorf("failed to calculate houses: house system not supported or invalid parameters")
 	}
 
 	var houses []models.HouseCusp
+	var numericCusps []float64
 
 	// Create house cusps (houses 1-12)
 	for i := 1; i <= 12; i++ {
 		cusp := cusps[i] // swephgo uses 1-based indexing for cusps
 		house := models.HouseCusp{
 			House: i,
-			Cusp:  cusp,
+			Cusp:  models.FormatLongitude(cusp),
 			Sign:  models.GetZodiacSign(cusp),
 		}
 		houses = append(houses, house)
+		numericCusps = append(numericCusps, cusp)
 	}
 
 	ascendant := cusps[1]  // 1st house cusp is the Ascendant
 	midheaven := cusps[10] // 10th house cusp is the Midheaven
 
-	return houses, ascendant, midheaven, nil
+	return houses, numericCusps, ascendant, midheaven, nil
+}
+
+// normalizeAngle ensures angle is between 0 and 360 degrees
+func normalizeAngle(angle float64) float64 {
+	for angle < 0 {
+		angle += 360
+	}
+	for angle >= 360 {
+		angle -= 360
+	}
+	return angle
 }
 
 // getHouseForPlanet determines which house a planet is in based on its longitude
-func (s *AstrologyService) getHouseForPlanet(longitude float64, houses []models.HouseCusp) int {
-	// Simple algorithm to determine house placement
-	// This could be more sophisticated in a production system
+func (s *AstrologyService) getHouseForPlanet(longitude float64, numericCusps []float64) int {
+	// Normalize planet longitude to 0-360 range
+	planetLon := normalizeAngle(longitude)
+
+	// Check each house
 	for i := 0; i < 12; i++ {
-		currentHouse := houses[i].Cusp
-		nextHouse := houses[(i+1)%12].Cusp
+		currentCusp := normalizeAngle(numericCusps[i])
+		nextCusp := normalizeAngle(numericCusps[(i+1)%12])
 
-		// Handle the case where we cross 0 degrees
-		if nextHouse < currentHouse {
-			nextHouse += 360
-			if longitude < currentHouse && longitude >= 0 {
-				longitude += 360
+		// Handle the wrap-around case (house 12 to house 1)
+		if currentCusp > nextCusp {
+			// We cross 0° boundary
+			if planetLon >= currentCusp || planetLon < nextCusp {
+				return i + 1
 			}
-		}
-
-		if longitude >= currentHouse && longitude < nextHouse {
-			return houses[i].House
+		} else {
+			// Normal case - no 0° crossing
+			if planetLon >= currentCusp && planetLon < nextCusp {
+				return i + 1
+			}
 		}
 	}
 
-	return 1 // Default to 1st house if calculation fails
+	// If we get here, something went wrong - find closest house
+	minDiff := 360.0
+	closestHouse := 1
+
+	for i := 0; i < 12; i++ {
+		cuspLon := normalizeAngle(numericCusps[i])
+		diff := math.Abs(planetLon - cuspLon)
+		if diff > 180 {
+			diff = 360 - diff // Handle wrap-around
+		}
+		if diff < minDiff {
+			minDiff = diff
+			closestHouse = i + 1
+		}
+	}
+
+	return closestHouse
 }
 
 // calculateAspects calculates aspects between planets
@@ -309,7 +341,7 @@ func (s *AstrologyService) calculateAspects(planetData []planetCalcData) []model
 						Planet1:    data1.planet.Name,
 						Planet2:    data2.planet.Name,
 						Type:       aspectName,
-						Orb:        diff,
+						Orb:        models.FormatLongitude(diff),
 						IsApplying: data1.longitudeSpeed > data2.longitudeSpeed,
 					}
 					aspects = append(aspects, aspect)
