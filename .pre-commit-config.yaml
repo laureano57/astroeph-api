@@ -1,0 +1,9 @@
+# .pre-commit-config.yaml
+repos:
+  - repo: local
+    hooks:
+      - id: noop
+        name: no-op
+        entry: echo "Pre-commit hook placeholder"
+        language: system
+        always_run: true
