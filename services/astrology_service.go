@@ -100,8 +100,8 @@ func NewAstrologyService() (*AstrologyService, error) {
 	return service, nil
 }
 
-// CalculateNatalChart calculates a complete natal chart
-func (s *AstrologyService) CalculateNatalChart(req *models.NatalChartRequest) (*models.NatalChartResponse, error) {
+// CalculateNatalChart calculates a complete natal chart with optional SVG generation
+func (s *AstrologyService) CalculateNatalChart(req *models.NatalChartRequest, themeType *chart.ThemeType) (*models.NatalChartResponse, error) {
 	if !s.initialized {
 		return nil, fmt.Errorf("astrology service not initialized")
 	}
@@ -172,19 +172,8 @@ func (s *AstrologyService) CalculateNatalChart(req *models.NatalChartRequest) (*
 		UTCTime:  utcTime,
 	}
 
-	return response, nil
-}
-
-// CalculateNatalChartWithSVG calculates a complete natal chart with SVG generation
-func (s *AstrologyService) CalculateNatalChartWithSVG(req *models.NatalChartRequest, generateSVG bool, width int, themeType *chart.ThemeType) (*models.NatalChartResponse, error) {
-	// First calculate the regular natal chart
-	response, err := s.CalculateNatalChart(req)
-	if err != nil {
-		return nil, err
-	}
-
-	// If SVG generation is requested, recalculate with raw data
-	if generateSVG {
+	// Generate SVG if requested
+	if req.DrawChart {
 		// Recalculate positions to get raw numeric data for SVG
 		rawData, err := s.calculateRawPositionsForSVG(req)
 		if err != nil {
@@ -194,19 +183,19 @@ func (s *AstrologyService) CalculateNatalChartWithSVG(req *models.NatalChartRequ
 					Msg("Failed to calculate raw positions for SVG")
 			}
 			// Don't fail the entire request if SVG generation fails
-			response.SVG = ""
+			response.ChartDraw = ""
 		} else {
 			// Generate SVG using raw numeric data
-			chartResponse, err := chart.GenerateNatalChartSVGFromRawData(rawData, width, themeType)
+			chartResponse, err := chart.GenerateNatalChartSVGFromRawData(rawData, req.SVGWidth, themeType)
 			if err != nil {
 				if AppLogger != nil {
 					AppLogger.Error().
 						Err(err).
 						Msg("Failed to generate chart SVG")
 				}
-				response.SVG = ""
+				response.ChartDraw = ""
 			} else {
-				response.SVG = chartResponse.SVG
+				response.ChartDraw = chartResponse.SVG
 			}
 		}
 	}
