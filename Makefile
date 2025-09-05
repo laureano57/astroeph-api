@@ -130,3 +130,11 @@ dev:
 		echo "🔄 Using standard run mode..."; \
 		$(MAKE) run; \
 	fi
+
+# Configure git remote to use SSH
+.PHONY: fix-remote
+fix-remote:
+	@echo "🔧 Configuring remote origin with SSH..."
+	git remote set-url origin git@github-laureano57:laureano57/astroeph-api.git
+	@echo "✅ Remote configured:"
+	git remote -v
