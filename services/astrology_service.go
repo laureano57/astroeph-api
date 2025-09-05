@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"astroeph-api/models"
+	"astroeph-api/pkg/chart"
 
 	"github.com/mshafiee/swephgo"
 )
@@ -172,6 +173,116 @@ func (s *AstrologyService) CalculateNatalChart(req *models.NatalChartRequest) (*
 	}
 
 	return response, nil
+}
+
+// CalculateNatalChartWithSVG calculates a complete natal chart with SVG generation
+func (s *AstrologyService) CalculateNatalChartWithSVG(req *models.NatalChartRequest, generateSVG bool, width int, themeType *chart.ThemeType) (*models.NatalChartResponse, error) {
+	// First calculate the regular natal chart
+	response, err := s.CalculateNatalChart(req)
+	if err != nil {
+		return nil, err
+	}
+
+	// If SVG generation is requested, recalculate with raw data
+	if generateSVG {
+		// Recalculate positions to get raw numeric data for SVG
+		rawData, err := s.calculateRawPositionsForSVG(req)
+		if err != nil {
+			if AppLogger != nil {
+				AppLogger.Error().
+					Err(err).
+					Msg("Failed to calculate raw positions for SVG")
+			}
+			// Don't fail the entire request if SVG generation fails
+			response.SVG = ""
+		} else {
+			// Generate SVG using raw numeric data
+			chartResponse, err := chart.GenerateNatalChartSVGFromRawData(rawData, width, themeType)
+			if err != nil {
+				if AppLogger != nil {
+					AppLogger.Error().
+						Err(err).
+						Msg("Failed to generate chart SVG")
+				}
+				response.SVG = ""
+			} else {
+				response.SVG = chartResponse.SVG
+			}
+		}
+	}
+
+	return response, nil
+}
+
+// calculateRawPositionsForSVG calculates raw positions for SVG generation
+func (s *AstrologyService) calculateRawPositionsForSVG(req *models.NatalChartRequest) (*chart.RawChartData, error) {
+	if !s.initialized {
+		return nil, fmt.Errorf("astrology service not initialized")
+	}
+
+	// Get coordinates for the city using geocoding service
+	cityInfo, err := s.getCityInformation(req.City)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get city information for %s: %w", req.City, err)
+	}
+
+	lat, lon, timezone := cityInfo.Latitude, cityInfo.Longitude, cityInfo.Timezone
+
+	// Parse the local time and create UTC time
+	utcTime, err := s.parseTimeToUTC(req.Year, req.Month, req.Day, req.LocalTime, timezone)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse time: %w", err)
+	}
+
+	// Convert to Julian Day using UTC time
+	julianDay := swephgo.Julday(utcTime.Year(), int(utcTime.Month()), utcTime.Day(),
+		float64(utcTime.Hour())+float64(utcTime.Minute())/60.0+float64(utcTime.Second())/3600.0, 1)
+
+	// Calculate raw planet positions
+	rawPlanets := make([]chart.RawPlanetData, 0, len(mainPlanets))
+	for _, planetId := range mainPlanets {
+		xx := make([]float64, 6)
+		serr := make([]byte, 256)
+		result := swephgo.Calc(julianDay, planetId, 0, xx, serr)
+		if result < 0 {
+			continue // Skip this planet if calculation fails
+		}
+
+		rawPlanets = append(rawPlanets, chart.RawPlanetData{
+			Name:      planetNames[planetId],
+			Longitude: xx[0],
+			Speed:     xx[3],
+		})
+	}
+
+	// Calculate raw house cusps
+	houseSystem := s.getHouseSystemCode(req.HouseSystem)
+	cusps := make([]float64, 13)
+	ascmc := make([]float64, 10)
+	result := swephgo.Houses(julianDay, lat, lon, int(houseSystem), cusps, ascmc)
+	if result < 0 {
+		return nil, fmt.Errorf("failed to calculate houses")
+	}
+
+	// Extract house cusps (1-12)
+	houseCusps := make([]float64, 12)
+	for i := 0; i < 12; i++ {
+		houseCusps[i] = cusps[i+1] // swephgo uses 1-based indexing
+	}
+
+	rawData := &chart.RawChartData{
+		Name:        req.City,
+		Lat:         lat,
+		Lon:         lon,
+		UTCTime:     utcTime,
+		Planets:     rawPlanets,
+		HouseCusps:  houseCusps,
+		Ascendant:   cusps[1],  // 1st house cusp
+		Midheaven:   cusps[10], // 10th house cusp
+		HouseSystem: req.HouseSystem,
+	}
+
+	return rawData, nil
 }
 
 // Internal structure to hold planet calculation data

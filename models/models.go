@@ -21,6 +21,9 @@ type BaseRequest struct {
 type NatalChartRequest struct {
 	BaseRequest
 	HouseSystem string `json:"house_system,omitempty"` // defaults to "Placidus"
+	GenerateSVG bool   `json:"generate_svg,omitempty"` // whether to generate SVG chart
+	SVGWidth    int    `json:"svg_width,omitempty"`    // width of SVG chart (defaults to 600)
+	SVGTheme    string `json:"svg_theme,omitempty"`    // theme for SVG chart ("light", "dark", "mono")
 }
 
 type PlanetPosition struct {
@@ -63,6 +66,8 @@ type NatalChartResponse struct {
 	BirthInfo BirthInfo `json:"birth_info"`
 	Timezone  string    `json:"timezone"`
 	UTCTime   time.Time `json:"utc_time"`
+	SVG       string    `json:"svg,omitempty"`       // Generated SVG chart
+	ChartSVG  string    `json:"chart_svg,omitempty"` // Alternative field name
 }
 
 type BirthInfo struct {

@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"astroeph-api/models"
+	"astroeph-api/pkg/chart"
 	"astroeph-api/services"
 
 	"github.com/gin-gonic/gin"
@@ -17,6 +18,11 @@ func RegisterRoutes(router *gin.Engine, astroService *services.AstrologyService)
 		// Natal chart endpoint
 		v1.POST("/natal-chart", func(c *gin.Context) {
 			handleNatalChart(c, astroService)
+		})
+
+		// Natal chart SVG endpoint
+		v1.POST("/natal-chart/svg", func(c *gin.Context) {
+			handleNatalChartSVG(c, astroService)
 		})
 
 		// Transits endpoint (placeholder for now)
@@ -51,16 +57,16 @@ func RegisterRoutes(router *gin.Engine, astroService *services.AstrologyService)
 // handleNatalChart processes natal chart calculation requests
 func handleNatalChart(c *gin.Context, astroService *services.AstrologyService) {
 	logger := services.AppLogger
-	
+
 	var req models.NatalChartRequest
-	
+
 	// Bind JSON request to struct with validation
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logger.Error().
 			Err(err).
 			Str("endpoint", "natal-chart").
 			Msg("Invalid request body")
-			
+
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "Invalid request body",
 			"details": err.Error(),
@@ -73,6 +79,11 @@ func handleNatalChart(c *gin.Context, astroService *services.AstrologyService) {
 		req.HouseSystem = "Placidus"
 	}
 
+	// Set default SVG width if SVG is requested
+	if req.GenerateSVG && req.SVGWidth <= 0 {
+		req.SVGWidth = 600
+	}
+
 	logger.CalculationLogger().
 		Str("city", req.City).
 		Int("year", req.Year).
@@ -80,17 +91,39 @@ func handleNatalChart(c *gin.Context, astroService *services.AstrologyService) {
 		Int("day", req.Day).
 		Str("house_system", req.HouseSystem).
 		Bool("ai_response", req.AIResponse).
+		Bool("generate_svg", req.GenerateSVG).
+		Int("svg_width", req.SVGWidth).
+		Str("svg_theme", req.SVGTheme).
 		Msg("🔮 Starting natal chart calculation")
 
-	// Call the astrology service to calculate the natal chart
-	chartData, err := astroService.CalculateNatalChart(&req)
+	// Parse SVG theme if provided
+	var themeType *chart.ThemeType
+	if req.SVGTheme != "" {
+		switch req.SVGTheme {
+		case "light":
+			theme := chart.ThemeLight
+			themeType = &theme
+		case "dark":
+			theme := chart.ThemeDark
+			themeType = &theme
+		case "mono":
+			theme := chart.ThemeMono
+			themeType = &theme
+		default:
+			// Use default theme
+			themeType = nil
+		}
+	}
+
+	// Call the astrology service to calculate the natal chart with optional SVG
+	chartData, err := astroService.CalculateNatalChartWithSVG(&req, req.GenerateSVG, req.SVGWidth, themeType)
 	if err != nil {
 		logger.Error().
 			Err(err).
 			Str("endpoint", "natal-chart").
 			Str("city", req.City).
 			Msg("Failed to calculate natal chart")
-			
+
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Failed to calculate natal chart",
 			"details": err.Error(),
@@ -110,7 +143,7 @@ func handleNatalChart(c *gin.Context, astroService *services.AstrologyService) {
 		logger.Debug().
 			Str("endpoint", "natal-chart").
 			Msg("🤖 Generating LLM-optimized response")
-			
+
 		llmText := models.FormatNatalChartForLLM(chartData)
 		c.JSON(http.StatusOK, gin.H{
 			"ai_response": llmText,
@@ -216,4 +249,100 @@ func handleLunarReturn(c *gin.Context, astroService *services.AstrologyService) 
 		"error":   "Lunar return calculation not yet implemented",
 		"message": "This endpoint will be available in a future version",
 	})
+}
+
+// handleNatalChartSVG processes natal chart SVG generation requests
+func handleNatalChartSVG(c *gin.Context, astroService *services.AstrologyService) {
+	logger := services.AppLogger
+
+	var req models.NatalChartRequest
+
+	// Bind JSON request to struct with validation
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Error().
+			Err(err).
+			Str("endpoint", "natal-chart-svg").
+			Msg("Invalid request body")
+
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request body",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Set defaults
+	if req.HouseSystem == "" {
+		req.HouseSystem = "Placidus"
+	}
+	if req.SVGWidth <= 0 {
+		req.SVGWidth = 600
+	}
+	if req.SVGTheme == "" {
+		req.SVGTheme = "dark"
+	}
+
+	// Force SVG generation
+	req.GenerateSVG = true
+
+	logger.CalculationLogger().
+		Str("city", req.City).
+		Int("year", req.Year).
+		Int("month", req.Month).
+		Int("day", req.Day).
+		Str("house_system", req.HouseSystem).
+		Int("svg_width", req.SVGWidth).
+		Str("svg_theme", req.SVGTheme).
+		Msg("🎨 Starting natal chart SVG generation")
+
+	// Parse SVG theme
+	var themeType *chart.ThemeType
+	switch req.SVGTheme {
+	case "light":
+		theme := chart.ThemeLight
+		themeType = &theme
+	case "dark":
+		theme := chart.ThemeDark
+		themeType = &theme
+	case "mono":
+		theme := chart.ThemeMono
+		themeType = &theme
+	}
+
+	// Calculate natal chart with SVG
+	chartData, err := astroService.CalculateNatalChartWithSVG(&req, true, req.SVGWidth, themeType)
+	if err != nil {
+		logger.Error().
+			Err(err).
+			Str("endpoint", "natal-chart-svg").
+			Str("city", req.City).
+			Msg("Failed to generate natal chart SVG")
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to generate natal chart SVG",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	if chartData.SVG == "" {
+		logger.Error().
+			Str("endpoint", "natal-chart-svg").
+			Msg("SVG generation returned empty result")
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "SVG generation failed",
+			"details": "Generated SVG is empty",
+		})
+		return
+	}
+
+	logger.Info().
+		Str("endpoint", "natal-chart-svg").
+		Int("svg_length", len(chartData.SVG)).
+		Msg("✨ Natal chart SVG generated successfully")
+
+	// Return SVG with appropriate content type
+	c.Header("Content-Type", "image/svg+xml")
+	c.String(http.StatusOK, chartData.SVG)
 }
