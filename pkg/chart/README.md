@@ -39,7 +39,7 @@ package main
 
 import (
     "astroeph-api/pkg/chart"
-    "astroeph-api/models"
+    "astroeph-api/internal/domain"
 )
 
 func main() {

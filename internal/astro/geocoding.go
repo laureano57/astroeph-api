@@ -1,6 +1,7 @@
-package services
+package astro
 
 import (
+	"astroeph-api/internal/domain"
 	"bufio"
 	"database/sql"
 	"fmt"
@@ -17,40 +18,19 @@ type GeocodingService struct {
 	db *sql.DB
 }
 
-// CityInfo represents geographic and timezone information for a city
-type CityInfo struct {
-	GeonameID      int     `json:"geoname_id"`
-	Name           string  `json:"name"`
-	ASCIIName      string  `json:"ascii_name"`
-	AlternateNames string  `json:"alternate_names"`
-	Country        string  `json:"country"`
-	Latitude       float64 `json:"latitude"`
-	Longitude      float64 `json:"longitude"`
-	Population     int     `json:"population"`
-	Timezone       string  `json:"timezone"`
+// geoCodeService is the global instance
+var geoCodeService *GeocodingService
+
+// Initialize sets up the global geocoding service
+func Initialize() error {
+	var err error
+	geoCodeService, err = NewGeocodingService()
+	return err
 }
 
-// GeonamesRecord represents a single record from the cities500.txt file
-type GeonamesRecord struct {
-	GeonameID        int
-	Name             string
-	ASCIIName        string
-	AlternateNames   string
-	Latitude         float64
-	Longitude        float64
-	FeatureClass     string
-	FeatureCode      string
-	CountryCode      string
-	CC2              string
-	Admin1Code       string
-	Admin2Code       string
-	Admin3Code       string
-	Admin4Code       string
-	Population       int
-	Elevation        int
-	DEM              int
-	Timezone         string
-	ModificationDate string
+// GetGeocodingService returns the global geocoding service instance
+func GetGeocodingService() *GeocodingService {
+	return geoCodeService
 }
 
 // NewGeocodingService creates a new geocoding service with embedded SQLite database
@@ -66,10 +46,6 @@ func NewGeocodingService() (*GeocodingService, error) {
 	// Initialize the database with city data
 	if err := service.initializeDatabase(); err != nil {
 		return nil, fmt.Errorf("failed to initialize geocoding database: %w", err)
-	}
-
-	if AppLogger != nil {
-		AppLogger.Info().Msg("🌍 Geocoding service initialized with local database")
 	}
 
 	return service, nil
@@ -111,12 +87,6 @@ func (g *GeocodingService) loadGeoNamesData() error {
 	// Find the cities500.txt file
 	dataPath := filepath.Join("data", "geocoding", "cities500.txt")
 
-	if AppLogger != nil {
-		AppLogger.Info().
-			Str("file_path", dataPath).
-			Msg("📂 Loading GeoNames data from cities500.txt")
-	}
-
 	file, err := os.Open(dataPath)
 	if err != nil {
 		return fmt.Errorf("failed to open cities500.txt: %w", err)
@@ -140,27 +110,19 @@ func (g *GeocodingService) loadGeoNamesData() error {
 	defer stmt.Close()
 
 	scanner := bufio.NewScanner(file)
-	lineCount := 0
 	insertedCount := 0
 
 	for scanner.Scan() {
-		lineCount++
 		line := scanner.Text()
 
 		// Parse the GeoNames record
 		record, err := g.parseGeoNamesLine(line)
 		if err != nil {
-			if AppLogger != nil {
-				AppLogger.Debug().
-					Err(err).
-					Int("line_number", lineCount).
-					Msg("Skipping invalid line in cities500.txt")
-			}
-			continue
+			continue // Skip invalid lines
 		}
 
-		// Only include cities with valid timezones and reasonable population
-		if record.Timezone == "" || len(record.Timezone) == 0 {
+		// Only include cities with valid timezones
+		if record.Timezone == "" {
 			continue
 		}
 
@@ -178,27 +140,10 @@ func (g *GeocodingService) loadGeoNamesData() error {
 		)
 
 		if err != nil {
-			if AppLogger != nil {
-				AppLogger.Debug().
-					Err(err).
-					Str("city_name", record.Name).
-					Int("geoname_id", record.GeonameID).
-					Msg("Failed to insert city record")
-			}
-			continue
+			continue // Skip failed inserts
 		}
 
 		insertedCount++
-
-		// Log progress every 10,000 cities
-		if insertedCount%10000 == 0 {
-			if AppLogger != nil {
-				AppLogger.Info().
-					Int("cities_loaded", insertedCount).
-					Int("lines_processed", lineCount).
-					Msg("🔄 GeoNames loading progress...")
-			}
-		}
 	}
 
 	// Commit transaction
@@ -208,13 +153,6 @@ func (g *GeocodingService) loadGeoNamesData() error {
 
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("error reading cities500.txt: %w", err)
-	}
-
-	if AppLogger != nil {
-		AppLogger.Info().
-			Int("total_cities_loaded", insertedCount).
-			Int("total_lines_processed", lineCount).
-			Msg("✅ GeoNames database populated successfully")
 	}
 
 	return nil
@@ -258,14 +196,7 @@ func (g *GeocodingService) parseGeoNamesLine(line string) (*GeonamesRecord, erro
 	}
 
 	// Parse other fields
-	record.FeatureClass = fields[6]
-	record.FeatureCode = fields[7]
 	record.CountryCode = fields[8]
-	record.CC2 = fields[9]
-	record.Admin1Code = fields[10]
-	record.Admin2Code = fields[11]
-	record.Admin3Code = fields[12]
-	record.Admin4Code = fields[13]
 
 	// Parse population (field 14)
 	if fields[14] != "" {
@@ -274,37 +205,14 @@ func (g *GeocodingService) parseGeoNamesLine(line string) (*GeonamesRecord, erro
 		}
 	}
 
-	// Parse elevation (field 15)
-	if fields[15] != "" {
-		if elev, err := strconv.Atoi(fields[15]); err == nil {
-			record.Elevation = elev
-		}
-	}
-
-	// Parse DEM (field 16)
-	if fields[16] != "" {
-		if dem, err := strconv.Atoi(fields[16]); err == nil {
-			record.DEM = dem
-		}
-	}
-
 	// Parse timezone (field 17)
 	record.Timezone = fields[17]
-
-	// Parse modification date (field 18)
-	record.ModificationDate = fields[18]
 
 	return record, nil
 }
 
-// GetCityInfo looks up city information by name (case-insensitive, fuzzy matching across multiple fields)
-func (g *GeocodingService) GetCityInfo(cityName string) (*CityInfo, error) {
-	if AppLogger != nil {
-		AppLogger.Debug().
-			Str("city_query", cityName).
-			Msg("🔍 Looking up city coordinates in GeoNames database")
-	}
-
+// GetCityInfo looks up city information by name
+func (g *GeocodingService) GetCityInfo(cityName string) (*domain.Location, error) {
 	// Define the search queries in order of preference
 	queries := []struct {
 		name  string
@@ -335,67 +243,35 @@ func (g *GeocodingService) GetCityInfo(cityName string) (*CityInfo, error) {
 			 FROM cities WHERE LOWER(name) LIKE LOWER(?) ORDER BY population DESC LIMIT 1`,
 			[]interface{}{"%" + cityName + "%"},
 		},
-		{
-			"fuzzy ascii name match",
-			`SELECT geonameid, name, asciiname, alternatenames, country, latitude, longitude, population, timezone 
-			 FROM cities WHERE LOWER(asciiname) LIKE LOWER(?) ORDER BY population DESC LIMIT 1`,
-			[]interface{}{"%" + cityName + "%"},
-		},
 	}
 
 	// Try each query in order
 	for _, q := range queries {
-		var city CityInfo
+		var geonameid, population int
+		var name, asciiname, alternatenames, country, timezone string
+		var latitude, longitude float64
 
 		err := g.db.QueryRow(q.query, q.args...).Scan(
-			&city.GeonameID,
-			&city.Name,
-			&city.ASCIIName,
-			&city.AlternateNames,
-			&city.Country,
-			&city.Latitude,
-			&city.Longitude,
-			&city.Population,
-			&city.Timezone,
+			&geonameid, &name, &asciiname, &alternatenames,
+			&country, &latitude, &longitude, &population, &timezone,
 		)
 
 		if err == nil {
-			if AppLogger != nil {
-				AppLogger.Info().
-					Str("query_type", q.name).
-					Str("query", cityName).
-					Str("matched_city", city.Name).
-					Str("ascii_name", city.ASCIIName).
-					Str("country", city.Country).
-					Int("population", city.Population).
-					Float64("lat", city.Latitude).
-					Float64("lon", city.Longitude).
-					Str("timezone", city.Timezone).
-					Int("geoname_id", city.GeonameID).
-					Msg("✅ City found in GeoNames database")
-			}
-			return &city, nil
+			location := domain.NewLocation(name, name, country, latitude, longitude, timezone)
+			location.Region = "" // Could be enhanced to include region
+			return location, nil
 		}
 	}
 
 	// City not found in database, return default (New York) with warning
-	if AppLogger != nil {
-		AppLogger.Warn().
-			Str("city_query", cityName).
-			Msg("🌍 City not found in GeoNames database, using default coordinates (New York)")
-	}
-
-	return &CityInfo{
-		GeonameID:      5128581,  // New York City GeoName ID
-		Name:           cityName, // Keep original name
-		ASCIIName:      cityName,
-		AlternateNames: "",
-		Country:        "US",
-		Latitude:       40.7128,
-		Longitude:      -74.0060,
-		Population:     8175133,
-		Timezone:       "America/New_York",
-	}, nil
+	return domain.NewLocation(
+		cityName, // Keep original name
+		cityName,
+		"US",
+		40.7128,
+		-74.0060,
+		"America/New_York",
+	), nil
 }
 
 // Close closes the database connection
@@ -406,12 +282,15 @@ func (g *GeocodingService) Close() error {
 	return nil
 }
 
-// Global geocoding service instance
-var GeoService *GeocodingService
-
-// InitializeGeocodingService sets up the global geocoding service
-func InitializeGeocodingService() error {
-	var err error
-	GeoService, err = NewGeocodingService()
-	return err
+// GeonamesRecord represents a single record from the cities500.txt file
+type GeonamesRecord struct {
+	GeonameID      int
+	Name           string
+	ASCIIName      string
+	AlternateNames string
+	Latitude       float64
+	Longitude      float64
+	CountryCode    string
+	Population     int
+	Timezone       string
 }

@@ -1,4 +1,4 @@
-package services
+package logging
 
 import (
 	"os"
@@ -16,7 +16,7 @@ type Logger struct {
 func NewLogger() *Logger {
 	// Configure zerolog for beautiful console output in development
 	zerolog.TimeFieldFormat = time.RFC3339
-	
+
 	// Use console writer for better readability in development
 	output := zerolog.ConsoleWriter{
 		Out:        os.Stdout,
@@ -39,14 +39,14 @@ func NewLogger() *Logger {
 			return "📍 " + i.(string)
 		},
 	}
-	
+
 	logger := zerolog.New(output).
 		With().
 		Timestamp().
 		Caller().
 		Str("service", "astroeph-api").
 		Logger()
-	
+
 	return &Logger{logger: logger}
 }
 
@@ -83,13 +83,4 @@ func (l *Logger) RequestLogger() *zerolog.Event {
 // CalculationLogger logs astrological calculation details
 func (l *Logger) CalculationLogger() *zerolog.Event {
 	return l.logger.Info().Str("type", "calculation")
-}
-
-// Global logger instance
-var AppLogger *Logger
-
-// InitializeLogger sets up the global logger
-func InitializeLogger() {
-	AppLogger = NewLogger()
-	AppLogger.Info().Msg("🌟 AstroEph API Logger initialized")
 }

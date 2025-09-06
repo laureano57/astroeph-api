@@ -1,17 +1,17 @@
 package chart
 
 import (
-	"astroeph-api/models"
+	"astroeph-api/internal/domain"
 	"errors"
 )
 
 // ChartRequest represents a request to generate a chart SVG
 type ChartRequest struct {
-	NatalChartResponse *models.NatalChartResponse `json:"natal_chart_response"`
-	Width              int                        `json:"width"`
-	Height             *int                       `json:"height,omitempty"`
-	Config             *Config                    `json:"config,omitempty"`
-	ThemeType          *ThemeType                 `json:"theme_type,omitempty"`
+	NatalChartResponse *domain.Chart `json:"natal_chart_response"`
+	Width              int           `json:"width"`
+	Height             *int          `json:"height,omitempty"`
+	Config             *Config       `json:"config,omitempty"`
+	ThemeType          *ThemeType    `json:"theme_type,omitempty"`
 }
 
 // ChartResponse represents the generated chart response
@@ -61,7 +61,7 @@ func GenerateNatalChartSVG(request *ChartRequest) (*ChartResponse, error) {
 }
 
 // GenerateCompositeChartSVG generates an SVG composite chart from two chart datasets
-func GenerateCompositeChartSVG(chart1, chart2 *models.NatalChartResponse, width int, height *int, config *Config) (*ChartResponse, error) {
+func GenerateCompositeChartSVG(chart1, chart2 *domain.Chart, width int, height *int, config *Config) (*ChartResponse, error) {
 	if chart1 == nil || chart2 == nil {
 		return nil, errors.New("both natal chart responses are required for composite chart")
 	}
@@ -96,19 +96,19 @@ func GenerateCompositeChartSVG(chart1, chart2 *models.NatalChartResponse, width 
 }
 
 // GenerateSynastryChartSVG generates an SVG synastry chart (relationship comparison)
-func GenerateSynastryChartSVG(chart1, chart2 *models.NatalChartResponse, width int, height *int, config *Config) (*ChartResponse, error) {
+func GenerateSynastryChartSVG(chart1, chart2 *domain.Chart, width int, height *int, config *Config) (*ChartResponse, error) {
 	// Synastry uses the same visual structure as composite but may have different settings
 	return GenerateCompositeChartSVG(chart1, chart2, width, height, config)
 }
 
 // GenerateTransitChartSVG generates an SVG transit chart (current planets vs natal)
-func GenerateTransitChartSVG(natalChart *models.NatalChartResponse, transitPositions *models.NatalChartResponse, width int, height *int, config *Config) (*ChartResponse, error) {
+func GenerateTransitChartSVG(natalChart *domain.Chart, transitPositions *domain.Chart, width int, height *int, config *Config) (*ChartResponse, error) {
 	// Transits are technically synastry between natal and current positions
 	return GenerateCompositeChartSVG(natalChart, transitPositions, width, height, config)
 }
 
 // PrepareProgressionData prepares chart data for secondary progressions
-func PrepareProgressionData(natalChart *models.NatalChartResponse, progressedDate string, config Config) (*ChartData, error) {
+func PrepareProgressionData(natalChart *domain.Chart, progressedDate string, config Config) (*ChartData, error) {
 	// Convert natal chart data
 	natalData := NewChartData(natalChart, config)
 

@@ -1,7 +1,7 @@
 package chart
 
 import (
-	"astroeph-api/models"
+	"astroeph-api/internal/domain"
 	"math"
 	"strings"
 )
@@ -95,12 +95,12 @@ type ChartData struct {
 	Aspectables []MovableBody `json:"aspectables"`
 }
 
-// NewChartData creates a new ChartData from models.NatalChartResponse
-func NewChartData(response *models.NatalChartResponse, config Config) *ChartData {
+// NewChartData creates a new ChartData from domain.Chart
+func NewChartData(response *domain.Chart, config Config) *ChartData {
 	chartData := &ChartData{
-		Name:    response.BirthInfo.City,
-		Lat:     response.BirthInfo.Latitude,
-		Lon:     response.BirthInfo.Longitude,
+		Name:    response.BirthInfo.Location.City,
+		Lat:     response.BirthInfo.Location.Latitude,
+		Lon:     response.BirthInfo.Location.Longitude,
 		UTCTime: response.UTCTime.Format("2006-01-02 15:04:05"),
 		Config:  config,
 	}
@@ -130,7 +130,7 @@ func NewChartData(response *models.NatalChartResponse, config Config) *ChartData
 }
 
 // createVertices creates vertex objects from chart angles
-func (cd *ChartData) createVertices(response *models.NatalChartResponse) {
+func (cd *ChartData) createVertices(response *domain.Chart) {
 	// Get ASC degree from first house cusp
 	ascDeg := 0.0
 	mcDeg := 0.0
@@ -151,7 +151,7 @@ func (cd *ChartData) createVertices(response *models.NatalChartResponse) {
 }
 
 // createHouses creates house objects from house cusps
-func (cd *ChartData) createHouses(response *models.NatalChartResponse) {
+func (cd *ChartData) createHouses(response *domain.Chart) {
 	cd.Houses = make([]House, len(response.Houses))
 
 	for i, houseCusp := range response.Houses {
@@ -168,7 +168,7 @@ func (cd *ChartData) createHouses(response *models.NatalChartResponse) {
 }
 
 // createPlanets creates planet objects from planet positions
-func (cd *ChartData) createPlanets(response *models.NatalChartResponse) {
+func (cd *ChartData) createPlanets(response *domain.Chart) {
 	cd.Planets = make([]Planet, 0, len(response.Planets))
 
 	for _, planetPos := range response.Planets {
@@ -262,7 +262,7 @@ func (cd *ChartData) setAspectables() {
 }
 
 // createAspects creates aspect objects from model aspects
-func (cd *ChartData) createAspects(response *models.NatalChartResponse) {
+func (cd *ChartData) createAspects(response *domain.Chart) {
 	cd.Aspects = make([]Aspect, 0, len(response.Aspects))
 
 	for _, modelAspect := range response.Aspects {
@@ -284,13 +284,13 @@ func (cd *ChartData) createAspects(response *models.NatalChartResponse) {
 		}
 
 		// Find aspect member
-		aspectMember := GetAspectMember(modelAspect.Type)
+		aspectMember := GetAspectMember(string(modelAspect.Type))
 		if aspectMember == nil {
 			continue
 		}
 
-		// Parse orb
-		orb := parseOrbValue(modelAspect.Orb)
+		// Convert orb from float64 to the expected format
+		orb := modelAspect.Orb
 
 		aspect := Aspect{
 			Body1:        body1,
