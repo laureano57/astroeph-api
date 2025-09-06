@@ -3,7 +3,7 @@
 
 # Variables
 BINARY_NAME=astroeph-api
-MAIN_PACKAGE=.
+MAIN_PACKAGE=./cmd/server/main.go
 PORT=8080
 
 # Swiss Ephemeris library path (required for runtime)
@@ -20,7 +20,12 @@ help:
 	@echo "  make test       - Run tests"
 	@echo "  make deps       - Download and tidy dependencies"
 	@echo "  make health     - Check if server is running"
-	@echo "  make natal      - Test natal chart endpoint"
+	@echo "  make natal      - Test natal chart endpoint (JSON)"
+	@echo "  make natal-ai   - Test natal chart endpoint (with AI response)"
+	@echo "  make synastry   - Test synastry endpoint"
+	@echo "  make test-all   - Run all endpoint tests (full)"
+	@echo "  make test-quick - Quick test of all endpoints"
+	@echo "  make check-deps - Verify Swiss Ephemeris installation"
 	@echo ""
 
 # Run the development server with Swiss Ephemeris support
@@ -29,8 +34,17 @@ run:
 	@echo "🌟 Starting AstroEph API server..."
 	@echo "📍 Port: $(PORT)"
 	@echo "📚 Library Path: $(DYLD_LIBRARY_PATH)"
-	@echo "🔗 Health Check: http://localhost:$(PORT)/health"
-	@echo "📖 API Endpoint: http://localhost:$(PORT)/api/v1/natal-chart"
+	@echo ""
+	@echo "🔗 Health Check:"
+	@echo "   http://localhost:$(PORT)/health"
+	@echo ""
+	@echo "📖 API Endpoints:"
+	@echo "   http://localhost:$(PORT)/api/v1/natal-chart"
+	@echo "   http://localhost:$(PORT)/api/v1/synastry"
+	@echo "   http://localhost:$(PORT)/api/v1/composite-chart"
+	@echo "   http://localhost:$(PORT)/api/v1/solar-return"
+	@echo "   http://localhost:$(PORT)/api/v1/lunar-return"
+	@echo "   http://localhost:$(PORT)/api/v1/progressions"
 	@echo ""
 	DYLD_LIBRARY_PATH=$(DYLD_LIBRARY_PATH) go run $(MAIN_PACKAGE)
 
@@ -75,7 +89,7 @@ health:
 	@echo "🏥 Checking server health..."
 	@curl -s http://localhost:$(PORT)/health | jq . || echo "❌ Server not responding"
 
-# Test natal chart endpoint
+# Test natal chart endpoint (JSON only)
 .PHONY: natal
 natal:
 	@echo "🌟 Testing natal chart endpoint..."
@@ -85,10 +99,80 @@ natal:
 			"day": 1, \
 			"month": 1, \
 			"year": 2000, \
-			"local_time": "12:00:00", \
+			"local_time": "12:00", \
 			"city": "London", \
-			"house_system": "Placidus" \
-		}' | jq . || echo "❌ Natal chart endpoint not responding"
+			"house_system": "Placidus", \
+			"ai_response": false \
+		}' | jq '.birth_info // .' || echo "❌ Natal chart endpoint not responding"
+
+# Test natal chart endpoint with AI response
+.PHONY: natal-ai
+natal-ai:
+	@echo "🌟🤖 Testing natal chart endpoint with AI response..."
+	@curl -X POST http://localhost:$(PORT)/api/v1/natal-chart \
+		-H "Content-Type: application/json" \
+		-d '{ \
+			"day": 1, \
+			"month": 1, \
+			"year": 2000, \
+			"local_time": "12:00", \
+			"city": "London", \
+			"house_system": "Placidus", \
+			"ai_response": true \
+		}' | jq 'has("ai_formatted_response")' || echo "❌ Natal chart AI endpoint not responding"
+
+# Test synastry endpoint
+.PHONY: synastry
+synastry:
+	@echo "💕 Testing synastry endpoint..."
+	@curl -X POST http://localhost:$(PORT)/api/v1/synastry \
+		-H "Content-Type: application/json" \
+		-d '{ \
+			"person1": { \
+				"day": 15, \
+				"month": 6, \
+				"year": 1990, \
+				"local_time": "14:30", \
+				"city": "London", \
+				"name": "Person 1" \
+			}, \
+			"person2": { \
+				"day": 22, \
+				"month": 3, \
+				"year": 1992, \
+				"local_time": "10:15", \
+				"city": "Paris", \
+				"name": "Person 2" \
+			}, \
+			"ai_response": false \
+		}' | jq '.synastry_aspects | length // .' || echo "❌ Synastry endpoint not responding"
+
+# Run all endpoint tests using the test script
+.PHONY: test-all
+test-all:
+	@echo "🧪 Running all endpoint tests..."
+	@if [ -f "./test_endpoints.sh" ]; then \
+		chmod +x ./test_endpoints.sh; \
+		./test_endpoints.sh; \
+	else \
+		echo "❌ test_endpoints.sh not found"; \
+		exit 1; \
+	fi
+
+# Quick test of all main endpoints
+.PHONY: test-quick
+test-quick:
+	@echo "⚡ Running quick endpoint tests..."
+	@echo "🏥 Health check..."
+	@$(MAKE) health
+	@echo ""
+	@echo "🌟 Natal chart test..."
+	@$(MAKE) natal
+	@echo ""
+	@echo "💕 Synastry test..."
+	@$(MAKE) synastry
+	@echo ""
+	@echo "✅ Quick tests completed!"
 
 # Development setup check
 .PHONY: check-deps
