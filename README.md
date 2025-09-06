@@ -12,7 +12,7 @@ Un servicio en Go para cálculos astrológicos que genera cartas natales, sinast
 - 📈 **Progresiones Secundarias**: Cálculo de progresiones
 - 🎨 **Gráficos SVG**: Generación de gráficos visuales en múltiples temas
 - 🤖 **Formato LLM**: Respuestas optimizadas para modelos de lenguaje
-- 🌍 **Geocodificación**: Base de datos integrada de ciudades mundiales
+- 🌍 **Geocodificación**: Base de datos GeoNames embebida (223k+ ciudades)
 
 ## Arquitectura
 
@@ -74,9 +74,9 @@ El proyecto sigue una arquitectura limpia y modular:
 │   └── chart/                      # Librería de generación de gráficos
 │       └── [archivos existentes]
 │
-├── data/                           # Datos de la aplicación
-│   └── geocoding/
-│       └── cities500.txt           # Base de datos de ciudades
+├── internal/astro/data/             # Datos embebidos de la aplicación
+│   ├── cities500.txt               # Base de datos de ciudades (embebida)
+│   └── readme.txt                  # Documentación de GeoNames
 │
 ├── go.mod
 ├── go.sum
@@ -85,33 +85,35 @@ El proyecto sigue una arquitectura limpia y modular:
 
 ## API Endpoints
 
+Todos los endpoints soportan respuestas JSON estructuradas y opcionalmente respuestas formateadas para LLM mediante el parámetro `"ai_response": true`.
+
 ### Cartas Natales
 - `POST /api/v1/natal-chart` - Calcular carta natal
-- `POST /api/v1/natal-chart/formatted` - Obtener carta natal formateada para LLM
 
 ### Sinastría
 - `POST /api/v1/synastry` - Calcular sinastría entre dos personas
-- `POST /api/v1/synastry/formatted` - Obtener sinastría formateada para LLM
 
 ### Cartas Compuestas
 - `POST /api/v1/composite-chart` - Calcular carta compuesta
-- `POST /api/v1/composite-chart/formatted` - Obtener carta compuesta formateada
 
 ### Revoluciones Solares
 - `POST /api/v1/solar-return` - Calcular revolución solar
-- `POST /api/v1/solar-return/formatted` - Obtener revolución solar formateada
 
 ### Revoluciones Lunares
 - `POST /api/v1/lunar-return` - Calcular revolución lunar
-- `POST /api/v1/lunar-return/formatted` - Obtener revolución lunar formateada
 
 ### Progresiones
 - `POST /api/v1/progressions` - Calcular progresiones secundarias
-- `POST /api/v1/progressions/formatted` - Obtener progresiones formateadas
 
 ### Utilidades
 - `GET /api/v1/house-systems` - Listar sistemas de casas disponibles
 - `GET /health` - Verificar estado del servicio
+
+### Parámetros Comunes
+
+Todos los endpoints de cálculo astrológico soportan:
+- `"ai_response": false` (default) - Respuesta JSON estructurada únicamente
+- `"ai_response": true` - Incluye campo adicional `"ai_formatted_response"` optimizado para LLMs
 
 ## Instalación y Uso
 
@@ -136,6 +138,10 @@ go mod tidy
 ### Ejecutar el servidor
 
 ```bash
+# Usando Make (recomendado - configura automáticamente Swiss Ephemeris)
+make run
+
+# O manualmente
 go run cmd/server/main.go
 ```
 
@@ -150,7 +156,7 @@ go build -o astroeph-api cmd/server/main.go
 
 ## Ejemplo de Uso
 
-### Carta Natal
+### Carta Natal (JSON estructurado)
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/natal-chart \
@@ -159,11 +165,28 @@ curl -X POST http://localhost:8080/api/v1/natal-chart \
     "day": 15,
     "month": 3,
     "year": 1990,
-    "local_time": "14:30:00",
+    "local_time": "14:30",
     "city": "Madrid",
     "house_system": "Placidus",
     "draw_chart": true,
-    "svg_theme": "light"
+    "svg_theme": "light",
+    "ai_response": false
+  }'
+```
+
+### Carta Natal con respuesta optimizada para LLM
+
+```bash
+curl -X POST http://localhost:8080/api/v1/natal-chart \
+  -H "Content-Type: application/json" \
+  -d '{
+    "day": 15,
+    "month": 3,
+    "year": 1990,
+    "local_time": "14:30",
+    "city": "Madrid",
+    "house_system": "Placidus",
+    "ai_response": true
   }'
 ```
 
@@ -178,7 +201,7 @@ curl -X POST http://localhost:8080/api/v1/synastry \
       "day": 15,
       "month": 3,
       "year": 1990,
-      "local_time": "14:30:00",
+      "local_time": "14:30",
       "city": "Madrid"
     },
     "person2": {
@@ -186,10 +209,21 @@ curl -X POST http://localhost:8080/api/v1/synastry \
       "day": 22,
       "month": 7,
       "year": 1988,
-      "local_time": "09:15:00",
+      "local_time": "09:15",
       "city": "Barcelona"
-    }
+    },
+    "ai_response": true
   }'
+```
+
+### Comandos Make para pruebas rápidas
+
+```bash
+make health     # Verificar estado del servidor
+make natal      # Probar endpoint de carta natal
+make natal-ai   # Probar carta natal con respuesta AI
+make synastry   # Probar endpoint de sinastría
+make test-all   # Ejecutar todas las pruebas
 ```
 
 ## Configuración
@@ -221,9 +255,10 @@ La aplicación puede configurarse mediante variables de entorno:
 - **Go**: Lenguaje de programación principal
 - **Gin**: Framework web HTTP
 - **Swiss Ephemeris (swephgo)**: Cálculos astronómicos precisos
-- **SQLite**: Base de datos para geocodificación
+- **SQLite**: Base de datos embebida para geocodificación
 - **Zerolog**: Logging estructurado
 - **SVG**: Generación de gráficos vectoriales
+- **GeoNames**: Base de datos geográfica mundial embebida
 
 ## Contribuir
 
@@ -233,29 +268,45 @@ La aplicación puede configurarse mediante variables de entorno:
 4. Push a la rama (`git push origin feature/nueva-caracteristica`)
 5. Crea un Pull Request
 
-## Licencia
+## Licencias y Créditos
 
-Este proyecto está bajo la Licencia MIT. Ver el archivo `LICENSE` para más detalles.
+### Licencia del Proyecto
 
-## Agradecimientos
+Este proyecto está bajo la **Licencia MIT**. Ver el archivo `LICENSE` para más detalles.
 
-- Swiss Ephemeris por los cálculos astronómicos precisos
-- GeoNames por la base de datos de ciudades
-- La comunidad de Go por las excelentes librerías
+### Datos Geográficos - GeoNames
+
+Este proyecto utiliza datos geográficos provenientes del **[GeoNames Gazetteer](https://www.geonames.org/)**, los cuales están licenciados bajo la **[Creative Commons Attribution 4.0 License](https://creativecommons.org/licenses/by/4.0/)**.
+
+**Créditos de GeoNames:**
+- **Fuente**: GeoNames Gazetteer (https://www.geonames.org/)
+- **Licencia**: Creative Commons Attribution 4.0 International License
+- **Archivo utilizado**: `cities500.txt` - Ciudades con población > 500 habitantes
+- **Formato**: Los datos están embebidos en el binario para mejorar la portabilidad
+- **Propósito**: Geocodificación y resolución de coordenadas de ciudades mundiales
+
+**Aviso de Licencia GeoNames:**
+```
+This work is licensed under a Creative Commons Attribution 4.0 License.
+See https://creativecommons.org/licenses/by/4.0/
+The Data is provided "as is" without warranty or any representation of accuracy, timeliness or completeness.
+```
+
+### Otros Componentes de Terceros
+
+- **[Swiss Ephemeris](https://www.astro.com/swisseph/)**: Cálculos astronómicos precisos (GNU GPL v2 para uso no comercial, licencia comercial disponible)
+- **[swephgo](https://github.com/mshafiee/swephgo)**: Wrapper Go para Swiss Ephemeris
+- **[Gin Web Framework](https://github.com/gin-gonic/gin)**: Framework HTTP (MIT License)
+- **[Zerolog](https://github.com/rs/zerolog)**: Biblioteca de logging (MIT License)
+- **[modernc.org/sqlite](https://gitlab.com/cznic/sqlite)**: Driver SQLite puro Go (BSD-3-Clause)
+
+### Agradecimientos
+
+- **GeoNames.org** por proporcionar una base de datos geográfica mundial completa y accesible
+- **Astrodienst** por el desarrollo y mantenimiento de Swiss Ephemeris
+- **La comunidad de Go** por las excelentes bibliotecas y herramientas
+- **Todos los contribuidores** que hacen posible el ecosistema de software libre
 
 ## Soporte
 
 Para reportar bugs o solicitar características, por favor abre un issue en GitHub.
-
-## Changelog
-
-### v1.0.0 (Refactorización Arquitectónica)
-- ✨ Arquitectura limpia con separación de capas
-- 🔧 Inyección de dependencias
-- 📝 Sistema de logging mejorado
-- 🛠️ Manejo de errores robusto
-- 🎯 Servicios especializados por tipo de carta
-- 🌐 Handlers HTTP separados por funcionalidad
-- 📊 Modelos de dominio bien definidos
-- ⚡ Capa astro optimizada
-- 🔍 Mejor organización del código

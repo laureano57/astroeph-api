@@ -2,16 +2,19 @@ package astro
 
 import (
 	"astroeph-api/internal/domain"
-	"bufio"
 	"database/sql"
+	_ "embed"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
 	_ "modernc.org/sqlite"
 )
+
+// Embed the geocoding data directly in the binary
+//
+//go:embed data/cities500.txt
+var geonamesData string
 
 // GeocodingService provides local city coordinate and timezone lookup
 type GeocodingService struct {
@@ -78,21 +81,12 @@ func (g *GeocodingService) initializeDatabase() error {
 		return fmt.Errorf("failed to create cities table: %w", err)
 	}
 
-	// Load GeoNames data from cities500.txt
+	// Load embedded GeoNames data
 	return g.loadGeoNamesData()
 }
 
-// loadGeoNamesData reads and parses the cities500.txt file
+// loadGeoNamesData reads and parses the embedded cities500.txt data
 func (g *GeocodingService) loadGeoNamesData() error {
-	// Find the cities500.txt file
-	dataPath := filepath.Join("data", "geocoding", "cities500.txt")
-
-	file, err := os.Open(dataPath)
-	if err != nil {
-		return fmt.Errorf("failed to open cities500.txt: %w", err)
-	}
-	defer file.Close()
-
 	// Begin transaction for better performance
 	tx, err := g.db.Begin()
 	if err != nil {
@@ -109,11 +103,17 @@ func (g *GeocodingService) loadGeoNamesData() error {
 	}
 	defer stmt.Close()
 
-	scanner := bufio.NewScanner(file)
+	// Parse embedded data line by line
+	lines := strings.Split(geonamesData, "\n")
 	insertedCount := 0
 
-	for scanner.Scan() {
-		line := scanner.Text()
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// Skip empty lines
+		if line == "" {
+			continue
+		}
 
 		// Parse the GeoNames record
 		record, err := g.parseGeoNamesLine(line)
@@ -151,14 +151,10 @@ func (g *GeocodingService) loadGeoNamesData() error {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("error reading cities500.txt: %w", err)
-	}
-
 	return nil
 }
 
-// parseGeoNamesLine parses a single line from the cities500.txt file
+// parseGeoNamesLine parses a single line from the embedded cities data
 func (g *GeocodingService) parseGeoNamesLine(line string) (*GeonamesRecord, error) {
 	fields := strings.Split(line, "\t")
 
@@ -282,7 +278,7 @@ func (g *GeocodingService) Close() error {
 	return nil
 }
 
-// GeonamesRecord represents a single record from the cities500.txt file
+// GeonamesRecord represents a single record from the embedded cities data
 type GeonamesRecord struct {
 	GeonameID      int
 	Name           string
